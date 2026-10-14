@@ -23,7 +23,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "stddef.h"
+#include "math.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -88,22 +88,36 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 }
 
 void led_blink(int type) {
-  static uint8_t blink_state = 0;
+  static uint8_t blink_state = 0; /* 这里用static是为了避免在全局作用域拉石 */
+
+  /* 
+  这里用了个取巧的方式
+  我们已知这个函数每250ms触发一次
+  那么对于目标的 250/500/1000ms 的GPIO电平转换间隔, 我们可以写出如下的计数器映射表
+  250  -> 1 = 2^0
+  500  -> 2 = 2^1
+  1000 -> 4 = 2^2
+
+  只要我们的counter循环计数的基础上每 250ms +1
+  那么在每次 counter=0 的时候转换电平就能切换间隔时间
+  */
   blink_state++;
-  blink_state%=(type+1);
+  blink_state%=(uint8_t)pow(2,type); //这个如果是大数据的话其实推荐预计算(
+
   if (blink_state == 0)
     HAL_GPIO_TogglePin(LED_PORT,LED_PIN);
 }
 
 void btn_debounce() {
-    if (HAL_GPIO_ReadPin(BTN_PORT, BTN_PIN) == HIGH) {
-      if (btn_cnt < 0xFFFF)
-        btn_cnt++;
-    } else {
-      if (btn_cnt >= DEBOUNCE_MS)
-        btn_state = 1;
-      btn_cnt = 0;                         
-    }
+  // 1ms一次的去抖
+  if (HAL_GPIO_ReadPin(BTN_PORT, BTN_PIN) == HIGH) {
+    if (btn_cnt < 0xFFFF) // 防止溢出 (应该没有人会按着超过1分钟吧
+      btn_cnt++; // 1ms计数一次
+  } else {
+    if (btn_cnt >= DEBOUNCE_MS) // 如果按的足够久就置flag, 并在主循环函数里面处理
+      btn_state = 1;
+    btn_cnt = 0; // 松开清空
+  }
 }
 
 /* USER CODE END 0 */
@@ -149,12 +163,12 @@ int main(void)
   while (1)
   {
     /* USER CODE END WHILE */
+    /* USER CODE BEGIN 3 */
     if (btn_state == 1) {
       blink_type++;
       blink_type%=3;
       btn_state=0;
     }
-    /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
 }
