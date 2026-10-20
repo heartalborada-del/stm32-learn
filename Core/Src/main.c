@@ -37,8 +37,8 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define SERVO_STOP_US 1500 /* 停止脉宽 (us) */
-#define SERVO_RANGE_US 500 /* 0~全速对应的脉宽偏移 (us)：1000~2000 */
+#define SERVO_STOP_US 1500  /* 停止脉宽 (us) */
+#define SERVO_RANGE_US 1000 /* 0~全速对应的脉宽偏移 (us)：1000~2000 */
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -100,7 +100,7 @@ void controller_debounce()
   }
 }
 
-void servo_control_360(uint8_t speed, bool isReverse)
+void servo_control360(uint8_t speed, bool isReverse)
 {
   /* 把 0~255 映射到 0~SERVO_RANGE_US */
   uint16_t offset = ((uint32_t)speed * SERVO_RANGE_US) / 255u;
@@ -115,10 +115,33 @@ void servo_control_360(uint8_t speed, bool isReverse)
     pulse_width = SERVO_STOP_US - offset;
   }
 
-  if (pulse_width < 1000)
-    pulse_width = 1000;
-  if (pulse_width > 2000)
-    pulse_width = 2000;
+  if (pulse_width < 500)
+    pulse_width = 500;
+  if (pulse_width > 2500)
+    pulse_width = 2500;
+
+  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, pulse_width);
+}
+
+void servo_control(uint8_t angle, bool isReverse)
+{
+  /* 把 0~180 映射到 0~SERVO_RANGE_US */
+  uint16_t offset = ((uint32_t)angle * SERVO_RANGE_US) / 180u;
+
+  uint16_t pulse_width;
+  if (isReverse)
+  {
+    pulse_width = SERVO_STOP_US + offset;
+  }
+  else
+  {
+    pulse_width = SERVO_STOP_US - offset;
+  }
+
+  if (pulse_width < 500)
+    pulse_width = 500;
+  if (pulse_width > 2500)
+    pulse_width = 2500;
 
   __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, pulse_width);
 }
@@ -171,7 +194,7 @@ int main(void)
   // 启动ADC转换
   HAL_ADC_Start(&hadc1);
   HAL_ADC_Start(&hadc2);
-  servo_control_360(0, false);
+  servo_control(0, false);
 
   /* USER CODE END 2 */
 
@@ -179,7 +202,7 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   uint32_t last_ctrl = 0;
   uint32_t last_uart = 0;
-  // servo_control_360(255,0);
+  servo_control(255, 0);
   while (1)
   {
     /* USER CODE END WHILE */
@@ -197,22 +220,22 @@ int main(void)
       if (diff >= -100 && diff <= 100)
       {
         /* 中心死区 ±100 内：停转 */
-        servo_control_360(0, false);
+        servo_control(0, false);
       }
       else
       {
-        /* 死区外：|diff| 从 100~2048 映射到速度 0~255 */
+        /* 死区外：|diff| 从 100~2048 映射到 -90-90 */
         int32_t mag = (diff > 0) ? diff : -diff;
-        int32_t spd = ((mag - 100) * 255) / (2048 - 100);
+        int32_t spd = ((mag - 100) * 180) / (2048 - 100);
 
-        if (spd > 255)
-          spd = 255;
+        if (spd > 180)
+          spd = 180;
         if (spd < 0)
           spd = 0;
 
         /* diff > 0 → 一个方向，diff < 0 → 另一个方向
            若舵机转向与摇杆相反，把 true/false 互换 */
-        servo_control_360((uint8_t)spd, diff > 0);
+        servo_control((uint8_t)spd, diff > 0);
       }
     }
 
