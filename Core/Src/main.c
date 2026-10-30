@@ -70,11 +70,13 @@ enum
   Processing,
 } wave_state = Idle;
 /**
- * [0]: Sine wave
- * [1]: Sawtooth wave
- * [2]: Square wave
+ * [0]: Sine wave    T = 1s   -> 1s / 10ms = 100 points
+ * [1]: Sawtooth     T = 0.5s -> 50 points
+ * [2]: Square       T = 1.5s -> 150 points
  */
 const uint8_t wave_T[] = {100, 50, 150};
+/* 幅值 A(零到峰值), 峰峰值为 2A */
+const float wave_A[] = {2.0f, 1.0f, 0.5f};
 volatile uint8_t current_pos = 0;
 
 void SendJustFloatData(float *data, uint8_t len)
@@ -212,18 +214,22 @@ int main(void)
 
     if (wave_state == Processing)
     {
+      /* 用点序号算相位: 0 ~ N-1 对应一个完整周期
+         N = T / 10ms, 所以点数和周期是分开的两个概念 */
+      uint8_t idx = output_mode.mode - 1;
+      uint8_t N = wave_T[idx];
       float data = 0.0f;
-      current_pos %= wave_T[output_mode.mode - 1];
+      current_pos %= N;
       switch (output_mode.mode)
       {
-      case 1: // Sine wave
-        data = sinf(2 * (float)M_PI * current_pos / wave_T[output_mode.mode - 1]);
+      case 1: // Sine wave: sin(2*pi*pos/N) 取值 -1~1, 再乘幅值 2
+        data = wave_A[idx] * sinf(2 * (float)M_PI * current_pos / N);
         break;
-      case 2: // Sawtooth wave
-        data = 2.0f * (current_pos / (float)wave_T[output_mode.mode - 1]) - 1.0f;
+      case 2: // Sawtooth wave: -1 匀速升到接近 1, 周期末跳回 -1
+        data = wave_A[idx] * (2.0f * current_pos / (float)N - 1.0f);
         break;
-      case 3: // Square wave
-        data = (current_pos < wave_T[output_mode.mode - 1] / 2) ? 1.0f : -1.0f;
+      case 3: // Square wave: 前一半为 +1, 后一半为 -1 (占空比 50%)
+        data = wave_A[idx] * ((current_pos < N / 2) ? 1.0f : -1.0f);
         break;
       }
       SendJustFloatData(&data, 1);
@@ -245,10 +251,13 @@ void SystemClock_Config(void)
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
+  RCC_OscInitStruct.HSEState = RCC_HSE_ON;
+  RCC_OscInitStruct.HSEPredivValue = RCC_HSE_PREDIV_DIV1;
   RCC_OscInitStruct.HSIState = RCC_HSI_ON;
-  RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
-  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_NONE;
+  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
+  RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL9;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
     Error_Handler();
@@ -258,12 +267,12 @@ void SystemClock_Config(void)
   */
   RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
                               |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
-  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_HSI;
+  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
-  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
+  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
   RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
 
-  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_0) != HAL_OK)
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK)
   {
     Error_Handler();
   }
