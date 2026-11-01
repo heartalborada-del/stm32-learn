@@ -68,7 +68,7 @@ enum
 {
   Idle = 0,
   Processing,
-} wave_state = Idle;
+} volatile wave_state = Idle;
 /**
  * [0]: Sine wave    T = 1s   -> 1s / 10ms = 100 points
  * [1]: Sawtooth     T = 0.5s -> 50 points
@@ -91,18 +91,6 @@ void SendJustFloatData(float *data, uint8_t len)
   HAL_UART_Transmit(&huart1, subfix, 4, 10);
 }
 
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
-{
-  if (htim == &htim2) // Check if the interrupt is from TIM2
-  {
-    if (wave_state == Idle)
-    {
-      wave_state = Processing;
-      current_pos++;
-    }
-  }
-}
-
 /* read single byte -> char */
 uint8_t rx_buf;
 /*
@@ -117,10 +105,23 @@ struct
   uint8_t state;
 } volatile output_mode = {1, 1};
 
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+  if (htim == &htim2) // Check if the interrupt is from TIM2
+  {
+    if (wave_state == Idle)
+    {
+      wave_state = Processing;
+      current_pos++;
+      current_pos %= wave_T[output_mode.mode - 1];
+    }
+  }
+}
+
 const char *output_mode_str[] = {
-    "Sine",
+    "Sine    ",
     "Sawtooth",
-    "Square",
+    "Square  ",
 };
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
@@ -206,7 +207,7 @@ int main(void)
     /* USER CODE BEGIN 3 */
     if (output_mode.state == 1)
     {
-      OLED_operate_gram(PEN_CLEAR);
+      // OLED_operate_gram(PEN_CLEAR);
       OLED_show_string(0, 0, (uint8_t *)output_mode_str[output_mode.mode - 1]);
       OLED_refresh_gram();
       output_mode.state = 0;
@@ -219,7 +220,6 @@ int main(void)
       uint8_t idx = output_mode.mode - 1;
       uint8_t N = wave_T[idx];
       float data = 0.0f;
-      current_pos %= N;
       switch (output_mode.mode)
       {
       case 1: // Sine wave: sin(2*pi*pos/N) 取值 -1~1, 再乘幅值 2
